@@ -143,7 +143,8 @@ class Scanner:
                                    path=rel_file_path,
                                    extension=extension,
                                    line_count=line_count,
-                                   file_type=self._guess_type(extension))
+                                   file_type=self._guess_type(extension),
+                                   source=content) # Store source for ALL text files
                 self.graph.add_edge(parent_node, rel_file_path)
 
                 if extension in self.parsers:

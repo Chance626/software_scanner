@@ -26,9 +26,13 @@ def main():
     template_path = os.path.join(base_dir, "templates", "report.html")
 
     generator = ReportGenerator(template_path=template_path)
-    report_path = generator.generate(graph, root_node, args.name, args.output)
+    report_path, data_path = generator.generate(graph, root_node, args.name, args.output)
 
-    print(f"Scan complete! Report saved to: {report_path}")
+    print(f"Scan complete!")
+    print(f"  Report: {report_path}")
+    print(f"  Data:   {data_path}")
+    print("\nNote: To view the report, you may need to run a local server to avoid CORS issues.")
+    print(f"      Example: cd {os.path.dirname(report_path)} && python3 -m http.server")
 
 if __name__ == '__main__':
     main()

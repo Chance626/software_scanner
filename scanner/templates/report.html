@@ -79,85 +79,27 @@
             margin: 0.25rem 0;
         }
 
-        .dir-summary {
-            padding: 0.5rem;
-            background: var(--dir-bg);
-            border-radius: 4px;
+        .dir-summary, .file-summary, .comp-summary {
+            padding: 0.4rem 0.5rem;
             cursor: pointer;
             list-style: none;
-            font-weight: 600;
             display: flex;
             align-items: center;
+            gap: 0.5rem;
+            border-radius: 4px;
         }
 
-        .dir-summary::-webkit-details-marker {
-            display: none;
-        }
-
-        .dir-summary:hover {
+        .dir-summary { background: var(--dir-bg); font-weight: 600; }
+        .file-summary { background: #fff; }
+        
+        .dir-summary:hover, .file-summary:hover, .comp-summary:hover {
             background: #e9ecef;
         }
 
-        .file-summary {
-            padding: 0.4rem 0.5rem;
-            background: #fff;
-            border-radius: 4px;
-            cursor: pointer;
-            list-style: none;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .file-summary:hover {
-            background: #f8f9fa;
-        }
-
-        .comp-summary {
-            padding: 0.3rem 0.5rem;
-            cursor: pointer;
-            list-style: none;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            border-radius: 4px;
-        }
-
-        .comp-summary:hover {
-            background: #f1f3f5;
-        }
-
+        .dir-summary::-webkit-details-marker, 
+        .file-summary::-webkit-details-marker,
         .comp-summary::-webkit-details-marker {
             display: none;
-        }
-
-        .docstring {
-            margin: 0.5rem 1rem;
-            padding: 0.5rem;
-            background: #fff9db;
-            border-left: 4px solid #fab005;
-            font-size: 0.9rem;
-            color: #5c5f66;
-            white-space: pre-wrap;
-        }
-
-        .source-code {
-            margin: 0.5rem 1rem;
-            padding: 0;
-            background: #2d2d2d;
-            color: #f8f8f2;
-            border-radius: 4px;
-            overflow-x: auto;
-            font-size: 0.85rem;
-        }
-
-        .source-code pre {
-            margin: 0;
-            padding: 1rem;
-        }
-
-        .source-code code {
-            font-family: 'Fira Code', 'Courier New', Courier, monospace;
         }
 
         .dir-content {
@@ -177,7 +119,7 @@
             font-size: 0.95rem;
         }
 
-        .file-node.expandable {
+        .file-node.expandable, .comp-node.expandable {
             display: block;
             background: transparent;
             padding: 0;
@@ -234,6 +176,42 @@
             font-weight: 600;
             color: var(--accent);
             margin-left: 0.5rem;
+        }
+
+        .docstring {
+            margin: 0.5rem 1rem;
+            padding: 0.5rem;
+            background: #fff9db;
+            border-left: 4px solid #fab005;
+            font-size: 0.9rem;
+            color: #5c5f66;
+            white-space: pre-wrap;
+        }
+
+        .source-code {
+            margin: 0.5rem 1rem;
+            padding: 0;
+            background: #2d2d2d;
+            color: #f8f8f2;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 0.85rem;
+        }
+
+        .source-code pre {
+            margin: 0;
+            padding: 1rem;
+        }
+
+        .source-code code {
+            font-family: 'Fira Code', 'Courier New', Courier, monospace;
+        }
+
+        .full-width {
+            margin-left: calc(-1.5rem * var(--depth) - 1.5rem);
+            margin-right: -1rem;
+            width: calc(100% + 1.5rem * var(--depth) + 2rem);
+            box-sizing: border-box;
         }
 
         [title] {
@@ -316,33 +294,50 @@
             min-width: 2rem;
         }
 
+        #loading {
+            text-align: center;
+            padding: 2rem;
+            font-size: 1.2rem;
+            color: var(--secondary);
+        }
+        
+        #error-msg {
+            display: none;
+            background: #fff5f5;
+            color: #c53030;
+            padding: 1rem;
+            border-radius: 4px;
+            border: 1px solid #feb2b2;
+            margin-bottom: 2rem;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Software Scanner Report: {{ project_name }}</h1>
-            <p>Generated on: {{ scan_date }}</p>
+            <h1 id="title">Software Scanner Report</h1>
+            <p id="scan-date">Loading data...</p>
         </header>
+
+        <div id="error-msg"></div>
 
         <div class="stats">
             <div class="stat-card">
                 <div class="stat-label">Total Files</div>
-                <div class="stat-value">{{ total_files }}</div>
+                <div id="stat-files" class="stat-value">-</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Total Lines</div>
-                <div class="stat-value">{{ total_lines }}</div>
+                <div id="stat-lines" class="stat-value">-</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Code Files</div>
-                <div class="stat-value">{{ code_count }}</div>
+                <div id="stat-code" class="stat-value">-</div>
             </div>
         </div>
 
-        <div class="tree-container">
-            {{ tree_html }}
-        </div>
+        <div id="loading">Initializing viewer...</div>
+        <div id="tree-container" class="tree-container" style="display:none;"></div>
     </div>
 
     <div class="help-btn" onclick="toggleModal(true)">?</div>
@@ -352,55 +347,148 @@
             <span class="close-modal" onclick="toggleModal(false)">&times;</span>
             <h2>Symbol Legend</h2>
             <div class="help-grid">
-                <div class="help-item">
-                    <div class="help-symbol">📁</div>
-                    <div><strong>Directory:</strong> A folder containing files or other directories.</div>
-                </div>
-                <div class="help-item">
-                    <div class="help-symbol">📄</div>
-                    <div><strong>File:</strong> A code, configuration, or documentation file.</div>
-                </div>
-                <div class="help-item">
-                    <div class="help-symbol">📦</div>
-                    <div><strong>Class:</strong> A Python class definition.</div>
-                </div>
-                <div class="help-item">
-                    <div class="help-symbol">ƒ</div>
-                    <div><strong>Function:</strong> A Python function or method.</div>
-                </div>
-                <div class="help-item">
-                    <div class="help-symbol">v</div>
-                    <div><strong>Variable:</strong> A top-level or class-level variable.</div>
-                </div>
-                <div class="help-item">
-                    <div class="help-symbol">●</div>
-                    <div><strong>Explicit Type:</strong> Type information was explicitly defined in the code.</div>
-                </div>
-                <div class="help-item">
-                    <div class="help-symbol">○</div>
-                    <div><strong>Heuristic Type:</strong> Type information was inferred or is missing.</div>
-                </div>
-                <div class="help-item">
-                    <div class="help-symbol"><span class="type-tag type-code">CODE</span></div>
-                    <div><strong>Code File:</strong> A file containing source code.</div>
-                </div>
-                <div class="help-item">
-                    <div class="help-symbol"><span class="type-tag type-config">CONFIG</span></div>
-                    <div><strong>Config File:</strong> A configuration file (JSON, YAML, etc.).</div>
-                </div>
+                <div class="help-item"><div class="help-symbol">📁</div><div><strong>Directory:</strong> A folder containing files or other directories.</div></div>
+                <div class="help-item"><div class="help-symbol">📄</div><div><strong>File:</strong> A code, configuration, or documentation file.</div></div>
+                <div class="help-item"><div class="help-symbol">📦</div><div><strong>Class:</strong> A Python class definition.</div></div>
+                <div class="help-item"><div class="help-symbol">ƒ</div><div><strong>Function:</strong> A Python function or method.</div></div>
+                <div class="help-item"><div class="help-symbol">v</div><div><strong>Variable:</strong> A top-level or class-level variable.</div></div>
+                <div class="help-item"><div class="help-symbol">●</div><div><strong>Explicit Type:</strong> Type information was explicitly defined in the code.</div></div>
+                <div class="help-item"><div class="help-symbol">○</div><div><strong>Heuristic Type:</strong> Type information was inferred or is missing.</div></div>
+                <div class="help-item"><div class="help-symbol"><span class="type-tag type-code">CODE</span></div><div><strong>Code File:</strong> A file containing source code.</div></div>
+                <div class="help-item"><div class="help-symbol"><span class="type-tag type-config">CONFIG</span></div><div><strong>Config File:</strong> A configuration file (JSON, YAML, etc.).</div></div>
             </div>
         </div>
     </div>
 
     <script>
+        const DATA_FILE = "{{ json_filename }}";
+
+        async function init() {
+            try {
+                const response = await fetch(DATA_FILE);
+                if (!response.ok) throw new Error(`Could not load ${DATA_FILE}`);
+                const data = await response.json();
+                
+                renderReport(data);
+            } catch (err) {
+                document.getElementById('loading').style.display = 'none';
+                const errorEl = document.getElementById('error-msg');
+                errorEl.style.display = 'block';
+                errorEl.innerHTML = `<strong>Error:</strong> ${err.message}<br><br>` +
+                    `This usually happens when opening the HTML file directly from the filesystem due to security restrictions (CORS).<br>` +
+                    `Please run a local web server to view the report:<br>` +
+                    `<code>python3 -m http.server</code>`;
+                console.error(err);
+            }
+        }
+
+        function renderReport(data) {
+            document.title = `Scanner Report - ${data.project_name}`;
+            document.getElementById('title').textContent = `Software Scanner Report: ${data.project_name}`;
+            document.getElementById('scan-date').textContent = `Generated on: ${data.scan_date}`;
+            
+            document.getElementById('stat-files').textContent = data.stats.total_files;
+            document.getElementById('stat-lines').textContent = data.stats.total_lines;
+            document.getElementById('stat-code').textContent = data.stats.code_count;
+            
+            const container = document.getElementById('tree-container');
+            container.appendChild(renderNode(data.tree));
+            
+            document.getElementById('loading').style.display = 'none';
+            container.style.display = 'block';
+        }
+
+        function renderNode(node) {
+            const children = node.children || [];
+            const hasChildren = children.length > 0;
+            const hasExtra = node.docstring || node.source;
+            const isExpandable = hasChildren || hasExtra;
+
+            const icons = {"directory": "📁", "file": "📄", "class": "📦", "function": "ƒ", "variable": "v"};
+            const icon = icons[node.type] || "•";
+
+            if (isExpandable) {
+                const details = document.createElement('details');
+                let nodeClass = node.type === 'directory' ? 'dir-node' : 'file-node expandable';
+                if (['class', 'function', 'variable'].includes(node.type)) {
+                    nodeClass = `comp-node expandable ${node.type}-node`;
+                }
+                details.className = nodeClass;
+
+                const summary = document.createElement('summary');
+                summary.className = node.type === 'directory' ? 'dir-summary' : 
+                                  (['class', 'function', 'variable'].includes(node.type) ? 'comp-summary' : 'file-summary');
+                
+                summary.innerHTML = buildHeader(node, icon);
+                details.appendChild(summary);
+
+                const content = document.createElement('div');
+                content.className = 'dir-content';
+                
+                // Add extra content (docs/source) only if it's a leaf node
+                if (!hasChildren) {
+                    if (node.docstring) {
+                        content.innerHTML += `<div class="docstring full-width" style="--depth: ${node.depth}"><strong>Docs:</strong><br>${escapeHtml(node.docstring).replace(/\n/g, '<br>')}</div>`;
+                    }
+                    if (node.source) {
+                        content.innerHTML += `<div class="source-code full-width" style="--depth: ${node.depth}"><pre><code>${escapeHtml(node.source)}</code></pre></div>`;
+                    }
+                }
+
+                children.forEach(child => content.appendChild(renderNode(child)));
+                details.appendChild(content);
+                return details;
+            } else {
+                const div = document.createElement('div');
+                div.className = 'file-node';
+                div.innerHTML = buildHeader(node, icon);
+                return div;
+            }
+        }
+
+        function buildHeader(node, icon) {
+            let name = node.name;
+            if (node.type === 'function') {
+                const args = (node.args || []).map(arg => {
+                    const indicator = arg.explicit ? "●" : "○";
+                    return `<span class="arg" title="${arg.explicit ? 'Explicit' : 'Inferred'}">${indicator} ${arg.name}${arg.type ? ': ' + arg.type : ''}</span>`;
+                }).join(', ');
+                const ret = node.returns || {};
+                const retInd = ret.explicit ? "●" : "○";
+                name = `${node.short_name}(${args}) <span class="return-type" title="${ret.explicit ? 'Explicit' : 'Inferred'}">→ ${retInd} ${ret.type || 'None'}</span>`;
+            }
+
+            let typeTag = "";
+            if (['class', 'function', 'variable'].includes(node.type)) {
+                typeTag = `<span class="type-tag type-${node.type}">${node.type}</span>`;
+            } else if (node.type === 'file') {
+                typeTag = `<span class="type-tag type-${node.file_type}">${node.file_type}</span>`;
+            }
+
+            let meta = node.type === 'file' ? `<span class="file-meta">${node.line_count} lines</span>` : "";
+
+            if (node.type === 'directory') {
+                return `<span class="icon">${icon}</span> ${name}`;
+            } else {
+                return `<span class="icon">${icon}</span> <span class="file-name">${name}</span> ${typeTag} ${meta}`;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         function toggleModal(show) {
             document.getElementById('helpModal').style.display = show ? 'flex' : 'none';
         }
 
-        // Close modal on Escape key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') toggleModal(false);
         });
+
+        document.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
 </html>

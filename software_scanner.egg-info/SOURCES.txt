@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+scanner/__init__.py
+scanner/cli.py
+scanner/core.py
+scanner/report.py
+scanner/templates/__init__.py
+scanner/templates/report.html
+software_scanner.egg-info/PKG-INFO
+software_scanner.egg-info/SOURCES.txt
+software_scanner.egg-info/dependency_links.txt
+software_scanner.egg-info/entry_points.txt
+software_scanner.egg-info/requires.txt
+software_scanner.egg-info/top_level.txt
+tests/test_scanner.py

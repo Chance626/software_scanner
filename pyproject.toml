@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "software_scanner"
+version = "0.1.0"
+authors = [
+  { name="Chance Brandt" },
+]
+description = "A tool to scan and visualize code components."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "networkx",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/chance_brandt/software_scanner"
+
+[project.scripts]
+pyscan = "scanner.cli:main"
+
+[tool.setuptools.package-data]
+scanner = ["templates/*.html"]

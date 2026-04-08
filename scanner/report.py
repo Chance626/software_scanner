@@ -18,6 +18,7 @@ class ReportGenerator:
         
         # Convert Graph to nested tree for JSON
         tree_data = self._graph_to_tree(graph, root_node)
+        functional_data = self._get_functional_view(graph)
         
         report_data = {
             "project_name": project_name,
@@ -27,7 +28,8 @@ class ReportGenerator:
                 "code_count": code_count,
                 "total_files": total_files
             },
-            "tree": tree_data
+            "tree": tree_data,
+            "functional": functional_data
         }
 
         # 2. Save JSON
@@ -73,3 +75,32 @@ class ReportGenerator:
         code_count = sum(1 for _, data in graph.nodes(data=True) if data.get("file_type") == "code")
         total_files = sum(1 for _, data in graph.nodes(data=True) if data.get("type") == "file")
         return total_lines, code_count, total_files
+
+    def _get_functional_view(self, graph):
+        """Group components by type (classes, functions) for a functional overview."""
+        functional = {
+            "classes": [],
+            "functions": []
+        }
+        
+        for node_id, data in graph.nodes(data=True):
+            if data.get("type") == "class":
+                # Create a copy and add the file context
+                node_copy = dict(data)
+                node_copy["file_path"] = node_id.split("::")[0]
+                functional["classes"].append(node_copy)
+            elif data.get("type") == "function":
+                # Only top-level functions or methods? 
+                # Let's include all for now but mark their parent
+                node_copy = dict(data)
+                parts = node_id.split("::")
+                node_copy["file_path"] = parts[0]
+                if len(parts) > 2:
+                    node_copy["parent_component"] = parts[1]
+                functional["functions"].append(node_copy)
+                
+        # Sort by name
+        functional["classes"].sort(key=lambda x: x["name"])
+        functional["functions"].sort(key=lambda x: x["name"])
+        
+        return functional

@@ -13,11 +13,10 @@ class TestScanner(unittest.TestCase):
     def test_scan_self(self):
         # Scan the current directory
         scanner = Scanner(".")
-        results = scanner.scan()
-        self.assertTrue(len(results) > 0)
+        graph, root = scanner.scan()
         
-        # Check if we find cli.py
-        cli_found = any(r["name"] == "cli.py" for r in results)
+        # Check if we find cli.py in the graph nodes
+        cli_found = any(data.get("name") == "cli.py" for _, data in graph.nodes(data=True))
         self.assertTrue(cli_found)
 
 if __name__ == '__main__':

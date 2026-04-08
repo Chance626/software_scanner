@@ -66,6 +66,34 @@
             color: var(--accent);
         }
 
+        /* View Switcher */
+        .view-switcher {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .view-btn {
+            padding: 0.75rem 1.5rem;
+            border: 1px solid var(--border);
+            background: white;
+            cursor: pointer;
+            border-radius: 4px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .view-btn:hover {
+            background: var(--bg);
+        }
+
+        .view-btn.active {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+
         /* Tree Styles */
         .tree-container {
             margin-top: 2rem;
@@ -161,6 +189,7 @@
         .type-class { background: #e1d5e7; color: #643471; }
         .type-function { background: #d5e8d4; color: #224b1d; }
         .type-variable { background: #ffe6cc; color: #6c4e11; }
+        .type-import { background: #f3f0ff; color: #5f3dc4; }
 
         /* Function Signature Styles */
         .arg {
@@ -336,8 +365,14 @@
             </div>
         </div>
 
+        <div class="view-switcher">
+            <button id="btn-directory" class="view-btn active" onclick="setView('directory')">Directory View</button>
+            <button id="btn-functional" class="view-btn" onclick="setView('functional')">Functional View</button>
+        </div>
+
         <div id="loading">Initializing viewer...</div>
         <div id="tree-container" class="tree-container" style="display:none;"></div>
+        <div id="functional-container" class="tree-container" style="display:none;"></div>
     </div>
 
     <div class="help-btn" onclick="toggleModal(true)">?</div>
@@ -362,14 +397,15 @@
 
     <script>
         const DATA_FILE = "{{ json_filename }}";
+        let projectData = null;
 
         async function init() {
             try {
                 const response = await fetch(DATA_FILE);
                 if (!response.ok) throw new Error(`Could not load ${DATA_FILE}`);
-                const data = await response.json();
+                projectData = await response.json();
                 
-                renderReport(data);
+                renderReport(projectData);
             } catch (err) {
                 document.getElementById('loading').style.display = 'none';
                 const errorEl = document.getElementById('error-msg');
@@ -379,6 +415,22 @@
                     `Please run a local web server to view the report:<br>` +
                     `<code>python3 -m http.server</code>`;
                 console.error(err);
+            }
+        }
+
+        function setView(viewType) {
+            document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(`btn-${viewType}`).classList.add('active');
+
+            if (viewType === 'directory') {
+                document.getElementById('tree-container').style.display = 'block';
+                document.getElementById('functional-container').style.display = 'none';
+            } else {
+                document.getElementById('tree-container').style.display = 'none';
+                document.getElementById('functional-container').style.display = 'block';
+                if (!document.getElementById('functional-container').hasChildNodes()) {
+                    renderFunctionalReport(projectData);
+                }
             }
         }
 
@@ -396,6 +448,48 @@
             
             document.getElementById('loading').style.display = 'none';
             container.style.display = 'block';
+        }
+
+        function renderFunctionalReport(data) {
+            const container = document.getElementById('functional-container');
+            
+            const createSection = (title, items) => {
+                if (!items.length) return null;
+                const details = document.createElement('details');
+                details.className = 'dir-node';
+                details.open = true;
+                const summary = document.createElement('summary');
+                summary.className = 'dir-summary';
+                summary.innerHTML = `<span class="icon">📁</span> ${title} (${items.length})`;
+                details.appendChild(summary);
+
+                const content = document.createElement('div');
+                content.className = 'dir-content';
+                items.forEach(item => {
+                    const nodeEl = renderNode(item);
+                    // Add context about which file it's in
+                    const label = document.createElement('div');
+                    label.style.fontSize = '0.75rem';
+                    label.style.color = '#6c757d';
+                    label.style.marginLeft = '1.5rem';
+                    label.style.marginTop = '-0.3rem';
+                    label.textContent = `defined in: ${item.file_path}`;
+                    
+                    const wrapper = document.createElement('div');
+                    wrapper.style.marginBottom = '1rem';
+                    wrapper.appendChild(nodeEl);
+                    wrapper.appendChild(label);
+                    content.appendChild(wrapper);
+                });
+                details.appendChild(content);
+                return details;
+            };
+
+            const classSection = createSection("Classes", data.functional.classes);
+            const funcSection = createSection("Functions", data.functional.functions);
+
+            if (classSection) container.appendChild(classSection);
+            if (funcSection) container.appendChild(funcSection);
         }
 
         function renderNode(node) {

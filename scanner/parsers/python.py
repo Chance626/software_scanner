@@ -8,9 +8,24 @@ class PythonParser(Parser):
         try:
             tree = ast.parse(content)
             # Global variables are usually desired, so we start with True
-            return self._parse_body(tree.body, include_variables=True)
+            components = self._parse_body(tree.body, include_variables=True)
+            imports = self._parse_imports(tree.body)
+            return components, imports
         except SyntaxError:
-            return []
+            return [], []
+
+    def _parse_imports(self, body):
+        """Extract imports from the AST."""
+        imports = []
+        for node in body:
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imports.append(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module if node.module else ""
+                for alias in node.names:
+                    imports.append(f"{module}.{alias.name}" if module else alias.name)
+        return imports
 
     def _parse_body(self, body, include_variables=True):
         """Recursively parse a list of AST nodes."""

@@ -54,8 +54,9 @@ class Scanner:
                 self.graph.add_edge(parent_node, rel_file_path)
 
                 if extension in self.parsers:
-                    components = self.parsers[extension].parse(content)
+                    components, imports = self.parsers[extension].parse(content)
                     self._add_components(rel_file_path, components)
+                    self.graph.nodes[rel_file_path]["imports"] = imports
 
         return self.graph, "."
 

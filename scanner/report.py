@@ -7,7 +7,7 @@ class ReportGenerator:
     def __init__(self, template_path="templates/report.html"):
         self.template_path = Path(template_path)
 
-    def generate(self, graph, root_node, project_name, output_path="report.html"):
+    def generate(self, graph, call_graph, root_node, project_name, output_path="report.html"):
         """Generate a JSON data file and a dynamic HTML viewer."""
         output_path = Path(output_path)
         json_path = output_path.with_suffix(".json")
@@ -17,8 +17,8 @@ class ReportGenerator:
         scan_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Convert Graph to nested tree for JSON
-        tree_data = self._graph_to_tree(graph, root_node)
-        functional_data = self._get_functional_view(graph)
+        tree_data = self._graph_to_tree(graph, call_graph, root_node)
+        functional_data = self._get_functional_view(graph, call_graph)
         
         report_data = {
             "project_name": project_name,
@@ -29,7 +29,11 @@ class ReportGenerator:
                 "total_files": total_files
             },
             "tree": tree_data,
-            "functional": functional_data
+            "functional": functional_data,
+            "call_graph": {
+                "nodes": [{"id": n, "name": n.split("::")[-1], "type": graph.nodes[n].get("type", "unknown")} for n in call_graph.nodes()],
+                "links": [{"source": u, "target": v, "type": d.get("type", "call")} for u, v, d in call_graph.edges(data=True)]
+            }
         }
 
         # 2. Save JSON
@@ -50,11 +54,22 @@ class ReportGenerator:
 
         return output_path.resolve(), json_path.resolve()
 
-    def _graph_to_tree(self, graph, node_id, depth=0):
+    def _graph_to_tree(self, graph, call_graph, node_id, depth=0):
         """Recursively convert networkx graph to a nested dictionary."""
         node_data = dict(graph.nodes[node_id])
+        node_data["id"] = node_id  # Ensure ID is present
         children = list(graph.successors(node_id))
         
+        # Add call information
+        if node_id in call_graph:
+            node_data["resolved_calls"] = list(call_graph.successors(node_id))
+            node_data["callers"] = list(call_graph.predecessors(node_id))
+            node_data["in_call_map"] = True
+        else:
+            node_data["resolved_calls"] = []
+            node_data["callers"] = []
+            node_data["in_call_map"] = False
+
         # Sort children: directories first, then files, then components
         children.sort(key=lambda x: (
             graph.nodes[x].get("type") != "directory",
@@ -65,7 +80,7 @@ class ReportGenerator:
         tree_node = {
             **node_data,
             "depth": depth,
-            "children": [self._graph_to_tree(graph, child, depth + 1) for child in children]
+            "children": [self._graph_to_tree(graph, call_graph, child, depth + 1) for child in children]
         }
         return tree_node
 
@@ -76,11 +91,12 @@ class ReportGenerator:
         total_files = sum(1 for _, data in graph.nodes(data=True) if data.get("type") == "file")
         return total_lines, code_count, total_files
 
-    def _get_functional_view(self, graph):
+    def _get_functional_view(self, graph, call_graph):
         """Group components by type (classes, functions) for a functional overview."""
         functional = {
             "classes": [],
-            "functions": []
+            "functions": [],
+            "symbol_map": {}
         }
         
         for node_id, data in graph.nodes(data=True):
@@ -88,16 +104,49 @@ class ReportGenerator:
                 # Create a copy and add the file context
                 node_copy = dict(data)
                 node_copy["file_path"] = node_id.split("::")[0]
+                node_copy["id"] = node_id
+                
+                # Add call information
+                if node_id in call_graph:
+                    node_copy["resolved_calls"] = list(call_graph.successors(node_id))
+                    node_copy["callers"] = list(call_graph.predecessors(node_id))
+                else:
+                    node_copy["resolved_calls"] = []
+                    node_copy["callers"] = []
+
                 functional["classes"].append(node_copy)
+                
+                name = data.get("name")
+                if name:
+                    if name not in functional["symbol_map"]:
+                        functional["symbol_map"][name] = []
+                    functional["symbol_map"][name].append(node_id)
+                    
             elif data.get("type") == "function":
                 # Only top-level functions or methods? 
                 # Let's include all for now but mark their parent
                 node_copy = dict(data)
                 parts = node_id.split("::")
                 node_copy["file_path"] = parts[0]
+                node_copy["id"] = node_id
+                
+                # Add call information
+                if node_id in call_graph:
+                    node_copy["resolved_calls"] = list(call_graph.successors(node_id))
+                    node_copy["callers"] = list(call_graph.predecessors(node_id))
+                else:
+                    node_copy["resolved_calls"] = []
+                    node_copy["callers"] = []
+
                 if len(parts) > 2:
                     node_copy["parent_component"] = parts[1]
                 functional["functions"].append(node_copy)
+
+                name = data.get("name")
+                if name:
+                    if name not in functional["symbol_map"]:
+                        functional["symbol_map"][name] = []
+                    functional["symbol_map"][name].append(node_id)
                 
         # Sort by name
         functional["classes"].sort(key=lambda x: x["name"])

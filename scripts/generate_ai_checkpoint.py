@@ -45,7 +45,7 @@ class AICheckpointGenerator:
 
     def run(self, output_path="ai_checkpoint.json"):
         print(f"Scanning {self.target_dir}...")
-        graph, root_node = self.scanner.scan()
+        graph, call_graph, root_node = self.scanner.scan()
         
         # Add summaries to all nodes first
         for node_id, data in graph.nodes(data=True):
@@ -56,7 +56,7 @@ class AICheckpointGenerator:
             "scan_date": datetime.datetime.now().isoformat(),
             "file_tree": self._build_tree(graph, root_node),
             "symbols": self._extract_symbols(graph),
-            "dependencies": self._extract_dependencies(graph),
+            "dependencies": self._extract_dependencies(graph, call_graph),
             "embeddings": {}
         }
         
@@ -110,11 +110,11 @@ class AICheckpointGenerator:
                 symbols.append(symbol)
         return symbols
 
-    def _extract_dependencies(self, graph):
+    def _extract_dependencies(self, graph, call_graph):
         """Build a call graph or dependency map."""
         deps = {
             "imports": {},
-            "call_graph": [] # Simple placeholder for now
+            "call_graph": [{"source": u, "target": v, "type": d.get("type", "call")} for u, v, d in call_graph.edges(data=True)]
         }
         for node_id, data in graph.nodes(data=True):
             if data.get("type") == "file" and "imports" in data:

@@ -7,6 +7,7 @@ class Scanner:
     def __init__(self, target_dir):
         self.target_dir = Path(target_dir).resolve()
         self.graph = nx.DiGraph()
+        self.call_graph = nx.DiGraph()
         self.parsers = {
             ".py": PythonParser()
         }
@@ -58,7 +59,38 @@ class Scanner:
                     self._add_components(rel_file_path, components)
                     self.graph.nodes[rel_file_path]["imports"] = imports
 
-        return self.graph, "."
+        self._resolve_calls()
+        return self.graph, self.call_graph, "."
+
+    def _resolve_calls(self):
+        """Build the call graph by resolving symbol names to node IDs."""
+        # 1. Map names to IDs (all defined symbols)
+        symbol_map = {}
+        for node_id, data in self.graph.nodes(data=True):
+            if data.get("type") in ["class", "function", "variable"]:
+                name = data.get("name")
+                if name:
+                    if name not in symbol_map:
+                        symbol_map[name] = []
+                    symbol_map[name].append(node_id)
+        
+        # 2. Add edges for each call that resolves to a project symbol
+        for node_id, data in self.graph.nodes(data=True):
+            # Resolve function calls
+            calls = data.get("calls", [])
+            for call_name in calls:
+                if call_name in symbol_map:
+                    for target_id in symbol_map[call_name]:
+                        self.call_graph.add_edge(node_id, target_id, type="call")
+            
+            # Resolve class inheritance
+            if data.get("type") == "class":
+                bases = data.get("bases", [])
+                for base_name in bases:
+                    if base_name in symbol_map:
+                        for target_id in symbol_map[base_name]:
+                            # Edge from subclass to base class
+                            self.call_graph.add_edge(node_id, target_id, type="inheritance")
 
     def _add_components(self, parent_node, components, prefix=""):
         """Recursively add components to the graph."""

@@ -11,7 +11,8 @@ class PythonParser(Parser):
             components = self._parse_body(tree.body, include_variables=True)
             imports = self._parse_imports(tree.body)
             return components, imports
-        except SyntaxError:
+        except SyntaxError as e:
+            print(f"  [Warning] Syntax error in file: {e}")
             return [], []
 
     def _parse_imports(self, body):
@@ -36,8 +37,10 @@ class PythonParser(Parser):
                     "name": node.name,
                     "type": "class",
                     "short_name": node.name,
+                    "bases": [ast.unparse(b) for b in node.bases],
                     "docstring": ast.get_docstring(node),
                     "source": self._get_scrubbed_source(node),
+                    "calls": self._extract_calls(node.body),
                     # Class variables should be included
                     "children": self._parse_body(node.body, include_variables=True)
                 })
@@ -53,6 +56,25 @@ class PythonParser(Parser):
                             "source": ast.unparse(node)
                         })
         return components
+
+    def _extract_calls(self, body):
+        """Extract function calls from a list of AST nodes, avoiding nested definitions."""
+        calls = []
+        for node in body:
+            # Skip nested definitions as they will have their own 'calls' list
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            
+            for child in ast.walk(node):
+                if isinstance(child, ast.Call):
+                    try:
+                        # Extract the name of the function being called
+                        call_name = ast.unparse(child.func)
+                        if call_name not in calls:
+                            calls.append(call_name)
+                    except Exception:
+                        pass
+        return calls
 
     def _get_scrubbed_source(self, node):
         """Returns the source code of a node with docstrings and comments removed."""
@@ -106,6 +128,7 @@ class PythonParser(Parser):
             "returns": return_info,
             "docstring": ast.get_docstring(node),
             "source": self._get_scrubbed_source(node),
+            "calls": self._extract_calls(node.body),
             # Variables defined within functions are now excluded
             "children": self._parse_body(node.body, include_variables=False)
         }

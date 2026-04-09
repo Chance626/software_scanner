@@ -17,7 +17,7 @@ def main():
 
     print(f"Scanning {args.target}...")
     scanner = Scanner(args.target)
-    graph, root_node = scanner.scan()
+    graph, call_graph, root_node = scanner.scan()
 
     print(f"Generating report to {args.output}...")
     
@@ -26,7 +26,7 @@ def main():
     template_path = os.path.join(base_dir, "templates", "report.html")
 
     generator = ReportGenerator(template_path=template_path)
-    report_path, data_path = generator.generate(graph, root_node, args.name, args.output)
+    report_path, data_path = generator.generate(graph, call_graph, root_node, args.name, args.output)
 
     print(f"Scan complete!")
     print(f"  Report: {report_path}")

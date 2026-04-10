@@ -20,6 +20,22 @@ class ReportGenerator:
         tree_data = self._graph_to_tree(graph, call_graph, root_node)
         functional_data = self._get_functional_view(graph, call_graph)
         
+        def get_groups(node_id):
+            """Extract directory and file groups from a node ID."""
+            file_path = node_id.split("::")[0]
+            path_obj = Path(file_path)
+            groups = []
+            
+            # Add directory groups
+            current = Path(".")
+            for part in path_obj.parts[:-1]:
+                current = current / part
+                groups.append({"id": str(current), "name": part, "type": "directory"})
+            
+            # Add file group
+            groups.append({"id": file_path, "name": path_obj.name, "type": "file"})
+            return groups
+
         report_data = {
             "project_name": project_name,
             "scan_date": scan_date,
@@ -31,7 +47,14 @@ class ReportGenerator:
             "tree": tree_data,
             "functional": functional_data,
             "call_graph": {
-                "nodes": [{"id": n, "name": n.split("::")[-1], "type": graph.nodes[n].get("type", "unknown")} for n in call_graph.nodes()],
+                "nodes": [
+                    {
+                        "id": n, 
+                        "name": n.split("::")[-1], 
+                        "type": graph.nodes[n].get("type", "unknown"),
+                        "groups": get_groups(n)
+                    } for n in call_graph.nodes()
+                ],
                 "links": [{"source": u, "target": v, "type": d.get("type", "call")} for u, v, d in call_graph.edges(data=True)]
             }
         }

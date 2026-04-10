@@ -123,6 +123,17 @@
         .link-inheritance { stroke: #e67e22; stroke-width: 2.5px; marker-end: url(#arrowhead-inheritance); }
         .node-label { font-size: 10px; pointer-events: none; fill: #333; font-weight: bold; }
 
+        /* Hull/Group Styles */
+        .groups-layer, .labels-layer { transition: opacity 0.4s ease-in-out; }
+        .hull { fill-opacity: 0.4; stroke-width: 2px; stroke-linejoin: round; cursor: pointer; transition: fill-opacity 0.3s, stroke-width 0.3s; }
+        .hull:hover { fill-opacity: 0.6; stroke-width: 3px; }
+        .hull-directory { stroke: #7f8c8d; stroke-dasharray: 4; }
+        .hull-file { stroke: #3498db; }
+        .hull-active { fill-opacity: 0.7 !important; stroke-width: 4px !important; stroke: #f1c40f !important; }
+        .hull-faded { opacity: 0.1; pointer-events: none; }
+        .hull-label { font-size: 12px; font-weight: 800; pointer-events: none; fill: #000; text-shadow: 0 0 3px #fff; dominant-baseline: middle; }
+        .hull-label.hull-faded { opacity: 0; }
+
         /* Standard node types */
         .node-class { fill: #9b59b6; }
         .node-function { fill: #2ecc71; }
@@ -233,16 +244,31 @@
         <div class="right-panel">
             <div id="call-map-header">
                 Interactive Call Map
-                <div style="font-size: 0.8rem; font-weight: normal; opacity: 0.9; display: flex; gap: 1rem;">
+                <div style="font-size: 0.8rem; font-weight: normal; opacity: 0.9; display: flex; gap: 1rem; align-items: center;">
+                    <div class="dropdown" style="position: relative; display: inline-block;">
+                        <div style="display: flex; align-items: center; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;">
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-right: 1px solid rgba(255,255,255,0.2); font-size: 0.85rem;">
+                                <input type="checkbox" id="shading-toggle" checked onchange="toggleShading(this.checked)"> 
+                                Shading
+                            </label>
+                            <button onclick="toggleDropdown()" style="background: transparent; color: white; border: none; padding: 4px 6px; cursor: pointer; font-size: 0.8rem;">
+                                ▾
+                            </button>
+                        </div>
+                        <div id="region-dropdown" class="dropdown-content" style="display: none; position: absolute; right: 0; background: white; min-width: 180px; box-shadow: 0 8px 16px rgba(0,0,0,0.2); z-index: 100; border-radius: 4px; padding: 10px; color: var(--text);">
+                            <div style="font-weight: bold; font-size: 0.75rem; color: #666; margin-bottom: 8px; text-transform: uppercase; border-bottom: 1px solid #eee; padding-bottom: 4px;">Regions</div>
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
                     <span style="display: flex; align-items: center; gap: 4px;"><div style="width: 12px; height: 2px; background: #3498db;"></div> Call</span>
                     <span style="display: flex; align-items: center; gap: 4px;"><div style="width: 12px; height: 3px; background: #e67e22;"></div> Inheritance</span>
                 </div>
                 <div style="font-size: 0.8rem; font-weight: normal; opacity: 0.7;">Drag nodes to move, Scroll to zoom</div>
             </div>
             <div id="call-map-container"></div>
-            <div id="tooltip" class="tooltip"></div>
         </div>
     </div>
+    <div id="tooltip" class="tooltip"></div>
 
     <div class="help-btn" onclick="toggleModal(true)">?</div>
 
@@ -426,18 +452,23 @@
         }
 
         /* D3 Call Map Implementation */
+        let groupElements, labelElements;
+        const colorScale = d3.scaleOrdinal(d3.schemePastel1);
+        const lineGenerator = d3.line().curve(d3.curveBasisClosed);
+
         function initCallMap(data) {
             const container = document.getElementById('call-map-container');
             const width = container.clientWidth;
             const height = container.clientHeight;
 
+            const zoom = d3.zoom().on("zoom", (event) => g.attr("transform", event.transform));
+
             svg = d3.select("#call-map-container")
                 .append("svg")
                 .attr("width", "100%")
                 .attr("height", "100%")
-                .call(d3.zoom().on("zoom", (event) => g.attr("transform", event.transform)));
+                .call(zoom);
 
-            // Arrowhead definitions
             const defs = svg.append("defs");
             defs.append("marker")
                 .attr("id", "arrowhead-call")
@@ -455,14 +486,123 @@
 
             g = svg.append("g");
 
+            // Extract unique groups (FILES ONLY)
+            const groupMap = new Map();
+            data.nodes.forEach(n => {
+                if (!n.groups) return;
+                const fileGroup = n.groups.find(g => g.type === 'file');
+                if (fileGroup) {
+                    if (!groupMap.has(fileGroup.id)) {
+                        groupMap.set(fileGroup.id, { ...fileGroup, nodes: [] });
+                    }
+                    groupMap.get(fileGroup.id).nodes.push(n);
+                }
+            });
+
+            const sortedGroups = Array.from(groupMap.values());
+
+            // Color scheme logic
+            const rootDirs = Array.from(new Set(sortedGroups.map(g => g.id.split('/')[0])));
+            const rootColorScale = d3.scaleOrdinal(d3.schemeCategory10).domain(rootDirs);
+
+            // Populate region dropdown
+            const dropdown = document.getElementById('region-dropdown');
+            dropdown.innerHTML = "";
+            rootDirs.forEach(root => {
+                const label = document.createElement('label');
+                label.style.display = 'flex';
+                label.style.alignItems = 'center';
+                label.style.gap = '8px';
+                label.style.padding = '4px 0';
+                label.style.cursor = 'pointer';
+                const color = rootColorScale(root);
+                label.innerHTML = `<input type="checkbox" checked data-region="${root}" onchange="toggleRegion('${root}', this.checked)"> <div style="width:12px; height:12px; background:${color}; border-radius:2px;"></div> ${root}`;
+                dropdown.appendChild(label);
+            });
+
+            function getGroupColor(groupId) {
+                const parts = groupId.split('/');
+                const root = parts[0];
+                const depth = parts.length;
+                const baseColor = d3.hsl(rootColorScale(root));
+                
+                // Adjust lightness based on depth: deeper = darker/more saturated? 
+                // Let's go with: deeper = slightly darker and more saturated
+                baseColor.l = Math.max(0.2, 0.8 - (depth * 0.08));
+                baseColor.s = Math.min(1, 0.4 + (depth * 0.1));
+                return baseColor;
+            }
+
+            // Grouping force: pull nodes toward their file centroid
+            const groupingForce = (alpha) => {
+                data.nodes.forEach(d => {
+                    if (d.groups && d.groups.length > 0) {
+                        const fileGroup = d.groups.find(g => g.type === 'file');
+                        if (fileGroup) {
+                            const gData = groupMap.get(fileGroup.id);
+                            if (gData) {
+                                let cx = d3.mean(gData.nodes, n => n.x);
+                                let cy = d3.mean(gData.nodes, n => n.y);
+                                d.vx += (cx - d.x) * alpha * 0.12;
+                                d.vy += (cy - d.y) * alpha * 0.12;
+                            }
+                        }
+                    }
+                });
+            };
+
             simulation = d3.forceSimulation(data.nodes)
-                .force("link", d3.forceLink(data.links).id(d => d.id).distance(150))
-                .force("charge", d3.forceManyBody().strength(-200))
+                .force("link", d3.forceLink(data.links).id(d => d.id).distance(80))
+                .force("charge", d3.forceManyBody().strength(-120))
                 .force("center", d3.forceCenter(width / 2, height / 2))
-                .force("collision", d3.forceCollide().radius(60));
+                .force("collision", d3.forceCollide().radius(35))
+                .force("grouping", groupingForce);
 
             for (let i = 0; i < 300; ++i) simulation.tick();
             simulation.stop();
+
+            // Auto-zoom to fit nodes
+            if (data.nodes.length > 0) {
+                const xExtent = d3.extent(data.nodes, d => d.x);
+                const yExtent = d3.extent(data.nodes, d => d.y);
+                const bWidth = xExtent[1] - xExtent[0];
+                const bHeight = yExtent[1] - yExtent[0];
+                const bCenterX = (xExtent[0] + xExtent[1]) / 2;
+                const bCenterY = (yExtent[0] + yExtent[1]) / 2;
+                
+                // Target ~40% of nodes for initial visibility (zoom in significantly more)
+                const padding = 20;
+                const scale = Math.min(width / (bWidth + padding), height / (bHeight + padding), 2.0) * 1.8;
+                
+                svg.call(zoom.transform, d3.zoomIdentity
+                    .translate(width / 2, height / 2)
+                    .scale(scale)
+                    .translate(-bCenterX, -bCenterY));
+            }
+
+            // Render hulls (shading) - FILES ONLY
+            groupElements = g.append("g").attr("class", "groups-layer")
+                .selectAll("path")
+                .data(sortedGroups)
+                .join("path")
+                .attr("class", d => `hull hull-${d.type}`)
+                .attr("fill", d => getGroupColor(d.id))
+                .attr("stroke", d => d3.color(getGroupColor(d.id)).darker())
+                .on("mouseover", showGroupTooltip)
+                .on("mousemove", updateTooltipPos)
+                .on("mouseout", hideTooltip)
+                .on("click", (e, d) => {
+                    e.stopPropagation();
+                    highlightGroup(d.id);
+                });
+
+            labelElements = g.append("g").attr("class", "labels-layer")
+                .selectAll("text")
+                .data(sortedGroups)
+                .join("text")
+                .attr("class", "hull-label")
+                .attr("text-anchor", "middle")
+                .text(d => d.name);
 
             link = g.append("g")
                 .selectAll("line")
@@ -477,19 +617,16 @@
                 .data(data.nodes)
                 .join("circle")
                 .attr("class", d => `node node-${d.type}`)
-                .attr("r", d => d.type === 'file' ? 10 : 7)
+                .attr("r", 8)
                 .attr("cx", d => d.x).attr("cy", d => d.y)
                 .on("mouseover", showTooltip)
+                .on("mousemove", updateTooltipPos)
                 .on("mouseout", hideTooltip)
                 .on("click", (e, d) => {
                     e.stopPropagation();
                     navigateTo(d.id);
                     focusOnMap(d.id, true);
-                })
-                .call(d3.drag()
-                    .on("start", dragstarted)
-                    .on("drag", dragged)
-                    .on("end", dragended));
+                });
 
             labels = g.append("g")
                 .selectAll("text")
@@ -500,10 +637,60 @@
                 .attr("text-anchor", "middle")
                 .attr("x", d => d.x).attr("y", d => d.y)
                 .text(d => d.name);
+
+            updateHulls();
+        }
+
+        function updateHulls() {
+            groupElements.attr("d", d => {
+                const nodes = d.nodes;
+                const coords = [];
+                // Dynamic padding: shallow groups (directories) get more padding
+                const depth = d.id.split('/').length;
+                const padding = Math.max(20, 50 - (depth * 5));
+                
+                nodes.forEach(n => {
+                    coords.push([n.x + padding, n.y]);
+                    coords.push([n.x - padding, n.y]);
+                    coords.push([n.x, n.y + padding]);
+                    coords.push([n.x, n.y - padding]);
+                    const diag = padding * 0.707;
+                    coords.push([n.x + diag, n.y + diag]);
+                    coords.push([n.x - diag, n.y - diag]);
+                });
+
+                const hull = d3.polygonHull(coords);
+                return hull ? lineGenerator(hull) : "";
+            });
+
+            labelElements.attr("x", d => d3.mean(d.nodes, n => n.x))
+                .attr("y", d => d3.mean(d.nodes, n => n.y));
+        }
+
+        function highlightGroup(groupId) {
+            const memberIds = new Set(projectData.call_graph.nodes
+                .filter(n => n.groups.some(g => g.id === groupId))
+                .map(n => n.id));
+
+            node.classed("node-active", d => memberIds.has(d.id));
+            node.classed("node-faded", d => !memberIds.has(d.id));
+            link.classed("link-faded", l => {
+                const s = typeof l.source === 'object' ? l.source.id : l.source;
+                const t = typeof l.target === 'object' ? l.target.id : l.target;
+                return !memberIds.has(s) || !memberIds.has(t);
+            });
+            labels.classed("node-faded", d => !memberIds.has(d.id));
+            
+            groupElements.classed("hull-active", d => d.id === groupId);
+            groupElements.classed("hull-faded", d => d.id !== groupId);
+            labelElements.classed("hull-faded", d => d.id !== groupId);
         }
 
         function focusOnMap(id, shouldFade = false) {
             if (!node) return;
+            groupElements.classed("hull-active", false);
+            groupElements.classed("hull-faded", false);
+            labelElements.classed("hull-faded", false);
             
             if (shouldFade) {
                 const connectedIds = new Set([id]);
@@ -549,6 +736,9 @@
             node.classed("node-faded", false);
             link.classed("link-faded", false);
             labels.classed("node-faded", false);
+            groupElements.classed("hull-active", false);
+            groupElements.classed("hull-faded", false);
+            labelElements.classed("hull-faded", false);
         }
 
         function dragstarted(event) {
@@ -563,6 +753,7 @@
             labels.filter(n => n.id === d.id).attr("x", d.fx).attr("y", d.fy);
             link.filter(l => l.source.id === d.id).attr("x1", d.fx).attr("y1", d.fy);
             link.filter(l => l.target.id === d.id).attr("x2", d.fx).attr("y2", d.fy);
+            updateHulls();
         }
         function dragended(event) {
             event.subject.x = event.subject.fx;
@@ -571,12 +762,71 @@
             event.subject.fy = null;
         }
 
+        function toggleShading(visible, skipRegions = false) {
+            const opacity = visible ? 1 : 0;
+            d3.select(".groups-layer").style("opacity", opacity).style("pointer-events", visible ? "all" : "none");
+            d3.select(".labels-layer").style("opacity", opacity).style("pointer-events", visible ? "all" : "none");
+            
+            if (!skipRegions) {
+                // Sync all region checkboxes with the master toggle
+                document.querySelectorAll('#region-dropdown input[type="checkbox"]').forEach(cb => {
+                    cb.checked = visible;
+                    toggleRegion(cb.dataset.region, visible, true);
+                });
+            }
+        }
+
+        function toggleDropdown() {
+            const dropdown = document.getElementById('region-dropdown');
+            dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function toggleRegion(root, isChecked, skipMaster = false) {
+            groupElements.filter(d => d.id.startsWith(root))
+                .style("display", isChecked ? "block" : "none");
+            labelElements.filter(d => d.id.startsWith(root))
+                .style("display", isChecked ? "block" : "none");
+
+            if (!skipMaster) {
+                const checkboxes = Array.from(document.querySelectorAll('#region-dropdown input[type="checkbox"]'));
+                const anyChecked = checkboxes.some(cb => cb.checked);
+                const master = document.getElementById('shading-toggle');
+                
+                if (isChecked && !master.checked) {
+                    master.checked = true;
+                    toggleShading(true, true);
+                } else if (!anyChecked && master.checked) {
+                    master.checked = false;
+                    toggleShading(false, true);
+                }
+            }
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.dropdown')) {
+                document.getElementById('region-dropdown').style.display = 'none';
+            }
+        });
+
+        function showGroupTooltip(event, d) {
+            const tt = document.getElementById('tooltip');
+            tt.style.opacity = 1;
+            tt.innerHTML = `<strong>${d.name}</strong><br>Type: ${d.type}<br><small>${d.id}</small><br><small>${d.nodes.length} symbols</small>`;
+            updateTooltipPos(event);
+        }
+
         function showTooltip(event, d) {
             const tt = document.getElementById('tooltip');
             tt.style.opacity = 1;
-            tt.style.left = (event.pageX + 10) + "px";
-            tt.style.top = (event.pageY - 10) + "px";
             tt.innerHTML = `<strong>${d.name}</strong><br>Type: ${d.type}<br><small>${d.id}</small>`;
+            updateTooltipPos(event);
+        }
+
+        function updateTooltipPos(event) {
+            const tt = document.getElementById('tooltip');
+            tt.style.left = (event.pageX + 15) + "px";
+            tt.style.top = (event.pageY + 15) + "px";
         }
 
         function hideTooltip() { document.getElementById('tooltip').style.opacity = 0; }

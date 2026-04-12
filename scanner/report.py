@@ -24,7 +24,7 @@ class ReportGenerator:
             """Extract directory and file groups from a node ID."""
             file_path = node_id.split("::")[0]
             path_obj = Path(file_path)
-            groups = []
+            groups = [{"id": ".", "name": project_name, "type": "directory"}]
             
             # Add directory groups
             current = Path(".")
@@ -93,17 +93,41 @@ class ReportGenerator:
             node_data["callers"] = []
             node_data["in_call_map"] = False
 
+        # Recursively build children
+        child_trees = [self._graph_to_tree(graph, call_graph, child, depth + 1) for child in children]
+
+        # Calculate directory stats
+        if node_data.get("type") == "directory":
+            total_files = 0
+            total_lines = 0
+            code_count = 0
+            
+            for child in child_trees:
+                if child.get("type") == "file":
+                    total_files += 1
+                    total_lines += child.get("line_count", 0)
+                    if child.get("file_type") == "code":
+                        code_count += 1
+                elif child.get("type") == "directory":
+                    total_files += child.get("total_files", 0)
+                    total_lines += child.get("total_lines", 0)
+                    code_count += child.get("code_count", 0)
+            
+            node_data["total_files"] = total_files
+            node_data["total_lines"] = total_lines
+            node_data["code_count"] = code_count
+
         # Sort children: directories first, then files, then components
-        children.sort(key=lambda x: (
-            graph.nodes[x].get("type") != "directory",
-            graph.nodes[x].get("type") != "file",
-            graph.nodes[x].get("name")
+        child_trees.sort(key=lambda x: (
+            x.get("type") != "directory",
+            x.get("type") != "file",
+            x.get("name")
         ))
         
         tree_node = {
             **node_data,
             "depth": depth,
-            "children": [self._graph_to_tree(graph, call_graph, child, depth + 1) for child in children]
+            "children": child_trees
         }
         return tree_node
 

@@ -183,8 +183,10 @@
         .type-doc { background: #d4edda; color: #155724; }
         .type-other { background: #e2e3e5; color: #383d41; }
         .type-class { background: #e1d5e7; color: #643471; }
+        .type-struct { background: #f8cecc; color: #b85450; }
         .type-function { background: #d5e8d4; color: #224b1d; }
         .type-variable { background: #ffe6cc; color: #6c4e11; }
+        .type-type { background: #dae8fc; color: #6c8ebf; }
 
         .call-section, .caller-section { margin: 0.5rem 1rem; padding: 0.5rem; font-size: 0.9rem; border-left: 4px solid; }
         .call-section { background: #e7f3ff; border-color: var(--accent); }
@@ -194,6 +196,16 @@
         .call-link { color: var(--accent); border-color: #cce5ff; }
         .caller-link { color: #e03131; border-color: #ffc9c9; }
         .source-code { margin: 0.5rem 1rem; background: #2d2d2d; color: #f8f8f2; border-radius: 4px; overflow-x: auto; font-size: 0.85rem; }
+        .docstring { 
+            margin: 0.5rem 1rem; 
+            padding: 0.75rem; 
+            background: rgba(255, 255, 49, 0.2); /* Daffodil Yellow with opacity */
+            border-left: 4px solid #ffff31; 
+            border-radius: 4px; 
+            font-size: 0.9rem; 
+            color: #495057;
+            white-space: pre-wrap;
+        }
         .focus-btn {
             padding: 0.1rem 0.3rem;
             margin-left: 0.5rem;
@@ -222,21 +234,6 @@
             </header>
 
             <div id="error-msg" style="display:none; color: #e03131;"></div>
-
-            <div class="stats">
-                <div class="stat-card">
-                    <div class="stat-label">Files</div>
-                    <div id="stat-files" class="stat-value">-</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Lines</div>
-                    <div id="stat-lines" class="stat-value">-</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Code</div>
-                    <div id="stat-code" class="stat-value">-</div>
-                </div>
-            </div>
 
             <div id="tree-container" class="tree-container"></div>
         </div>
@@ -318,103 +315,154 @@
             document.getElementById('title').textContent = data.project_name;
             document.getElementById('scan-date').textContent = `Generated: ${data.scan_date}`;
             
-            document.getElementById('stat-files').textContent = data.stats.total_files;
-            document.getElementById('stat-lines').textContent = data.stats.total_lines;
-            document.getElementById('stat-code').textContent = data.stats.code_count;
-            
             const container = document.getElementById('tree-container');
             container.innerHTML = "";
             container.appendChild(renderNode(data.tree));
         }
 
-        function renderNode(node) {
-            const children = node.children || [];
-            const hasChildren = children.length > 0;
-            const hasExtra = node.docstring || node.source || 
-                             (node.resolved_calls && node.resolved_calls.length > 0) ||
-                             (node.callers && node.callers.length > 0);
+        function renderNode(nodeData) {
+            const hasChildren = nodeData.children && nodeData.children.length > 0;
+            
+            // source is only shown for function/variable
+            const showSource = (nodeData.type === 'function' || nodeData.type === 'variable') && nodeData.source;
+            
+            const hasExtra = nodeData.docstring || showSource || 
+                             (nodeData.resolved_calls && nodeData.resolved_calls.length > 0) ||
+                             (nodeData.callers && nodeData.callers.length > 0);
             const isExpandable = hasChildren || hasExtra;
 
-            const icons = {"directory": "📁", "file": "📄", "class": "📦", "function": "ƒ", "variable": "v"};
-            const icon = icons[node.type] || "•";
-            const containerId = node.id ? `node-${node.id.replace(/[^a-zA-Z0-9]/g, '_')}` : null;
+            const icons = {"directory": "📁", "file": "📄", "class": "📦", "struct": "🏗️", "function": "ƒ", "variable": "v", "type": "🏷️"};
+            const icon = icons[nodeData.type] || "•";
+            const containerId = nodeData.id ? `node-${nodeData.id.replace(/[^a-zA-Z0-9]/g, '_')}` : null;
 
             if (isExpandable) {
                 const details = document.createElement('details');
                 if (containerId) details.id = containerId;
-                let nodeClass = node.type === 'directory' ? 'dir-node' : 'file-node expandable';
-                if (['class', 'function', 'variable'].includes(node.type)) {
-                    nodeClass = `comp-node expandable ${node.type}-node`;
+                let nodeClass = nodeData.type === 'directory' ? 'dir-node' : 'file-node expandable';
+                if (['class', 'struct', 'function', 'variable', 'type'].includes(nodeData.type)) {
+                    nodeClass = `comp-node expandable ${nodeData.type}-node`;
                 }
                 details.className = nodeClass;
 
                 const summary = document.createElement('summary');
-                summary.className = node.type === 'directory' ? 'dir-summary' : 
-                                  (['class', 'function', 'variable'].includes(node.type) ? 'comp-summary' : 'file-summary');
+                summary.className = nodeData.type === 'directory' ? 'dir-summary' : 
+                                  (['class', 'function', 'variable'].includes(nodeData.type) ? 'comp-summary' : 'file-summary');
                 
-                summary.innerHTML = buildHeader(node, icon);
-                summary.onclick = () => focusOnMap(node.id, false);
-                details.appendChild(summary);
-
+                summary.innerHTML = buildHeader(nodeData, icon);
+                
                 const content = document.createElement('div');
                 content.className = 'dir-content';
                 
-                if (node.docstring) {
-                    content.innerHTML += `<div class="docstring full-width"><strong>Docs:</strong><br>${escapeHtml(node.docstring).replace(/\n/g, '<br>')}</div>`;
-                }
-                
-                if (node.callers && node.callers.length > 0) {
-                    const section = document.createElement('div');
-                    section.className = 'caller-section full-width';
-                    section.innerHTML = `<strong>Callers:</strong>`;
-                    const list = document.createElement('div');
-                    list.className = 'call-list';
-                    node.callers.forEach(callerId => {
-                        const span = document.createElement('span');
-                        span.className = 'caller-link';
-                        span.textContent = callerId.split('::').pop();
-                        span.onclick = (e) => { e.stopPropagation(); navigateTo(callerId); };
-                        list.appendChild(span);
-                    });
-                    section.appendChild(list);
-                    content.appendChild(section);
-                }
+                details.ontoggle = (e) => {
+                    if (details.open && !details.dataset.loaded) {
+                        renderNodeContent(nodeData, content);
+                        details.dataset.loaded = "true";
+                    }
+                };
 
-                if (node.resolved_calls && node.resolved_calls.length > 0) {
-                    const callSection = document.createElement('div');
-                    callSection.className = 'call-section full-width';
-                    callSection.innerHTML = `<strong>Calls:</strong>`;
-                    const callList = document.createElement('div');
-                    callList.className = 'call-list';
-                    node.resolved_calls.forEach(targetId => {
-                        const span = document.createElement('span');
-                        span.className = 'call-link call-resolved';
-                        span.textContent = targetId.split('::').pop();
-                        span.onclick = (e) => { e.stopPropagation(); navigateTo(targetId); };
-                        callList.appendChild(span);
-                    });
-                    callSection.appendChild(callList);
-                    content.appendChild(callSection);
-                }
+                summary.onclick = (e) => {
+                    if (e.target.tagName === 'BUTTON') return;
+                    focusOnMap(nodeData.id, false);
+                };
 
-                if (node.source && !hasChildren) {
-                    const sourceEl = document.createElement('div');
-                    sourceEl.className = 'source-code full-width';
-                    sourceEl.innerHTML = `<pre><code>${escapeHtml(node.source)}</code></pre>`;
-                    content.appendChild(sourceEl);
-                }
-
-                children.forEach(child => content.appendChild(renderNode(child)));
+                details.appendChild(summary);
                 details.appendChild(content);
                 return details;
             } else {
                 const div = document.createElement('div');
                 if (containerId) div.id = containerId;
                 div.className = 'file-node';
-                div.innerHTML = buildHeader(node, icon);
-                div.onclick = () => focusOnMap(node.id, false);
+                div.innerHTML = buildHeader(nodeData, icon);
+                div.onclick = () => focusOnMap(nodeData.id, false);
                 return div;
             }
+        }
+
+        function renderNodeContent(nodeData, container) {
+            if (nodeData.docstring) {
+                container.innerHTML += `<div class="docstring full-width">${escapeHtml(nodeData.docstring)}</div>`;
+            }
+            
+            if (nodeData.callers && nodeData.callers.length > 0) {
+                const section = document.createElement('div');
+                section.className = 'caller-section full-width';
+                section.innerHTML = `<strong>Callers:</strong>`;
+                const list = document.createElement('div');
+                list.className = 'call-list';
+                nodeData.callers.forEach(callerId => {
+                    const span = document.createElement('span');
+                    span.className = 'caller-link';
+                    span.textContent = callerId.split('::').pop();
+                    span.onclick = (e) => { e.stopPropagation(); navigateTo(callerId); };
+                    list.appendChild(span);
+                });
+                section.appendChild(list);
+                container.appendChild(section);
+            }
+
+            if (nodeData.resolved_calls && nodeData.resolved_calls.length > 0) {
+                const callSection = document.createElement('div');
+                callSection.className = 'call-section full-width';
+                callSection.innerHTML = `<strong>Calls:</strong>`;
+                const callList = document.createElement('div');
+                callList.className = 'call-list';
+                nodeData.resolved_calls.forEach(targetId => {
+                    const span = document.createElement('span');
+                    span.className = 'call-link call-resolved';
+                    span.textContent = targetId.split('::').pop();
+                    span.onclick = (e) => { e.stopPropagation(); navigateTo(targetId); };
+                    callList.appendChild(span);
+                });
+                callSection.appendChild(callList);
+                container.appendChild(callSection);
+            }
+
+            const showSource = (nodeData.type === 'function' || nodeData.type === 'variable') && nodeData.source;
+            if (showSource) {
+                const sourceEl = document.createElement('div');
+                sourceEl.className = 'source-code full-width';
+                sourceEl.innerHTML = `<pre><code>${escapeHtml(nodeData.source)}</code></pre>`;
+                container.appendChild(sourceEl);
+            }
+
+            if (nodeData.children) {
+                nodeData.children.forEach(child => container.appendChild(renderNode(child)));
+            }
+        }
+
+        function navigateTo(id) {
+            const path = findPathInTree(projectData.tree, id);
+            if (!path) return;
+
+            for (const node of path) {
+                const domId = `node-${node.id.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                let el = document.getElementById(domId);
+                if (el && el.tagName === 'DETAILS') {
+                    el.open = true;
+                }
+            }
+
+            setTimeout(() => {
+                const domId = `node-${id.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                const el = document.getElementById(domId);
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    const s = el.querySelector('summary') || el;
+                    s.style.backgroundColor = '#fff3cd';
+                    setTimeout(() => s.style.backgroundColor = '', 2000);
+                }
+            }, 100);
+        }
+
+        function findPathInTree(root, targetId) {
+            if (root.id === targetId) return [root];
+            if (root.children) {
+                for (const child of root.children) {
+                    const path = findPathInTree(child, targetId);
+                    if (path) return [root, ...path];
+                }
+            }
+            return null;
         }
 
         function buildHeader(node, icon) {
@@ -427,28 +475,25 @@
                 name = `${node.short_name}(${args}) <span class="return-type">→ ${node.returns.explicit?"●":"○"} ${node.returns.type || 'None'}</span>`;
             }
             let typeTag = ['class', 'function', 'variable'].includes(node.type) ? `<span class="type-tag type-${node.type}">${node.type}</span>` : "";
-            let meta = node.type === 'file' ? `<span class="file-meta">${node.line_count} lines</span>` : "";
+            
+            let meta = "";
+            if (node.type === 'file') {
+                meta = `<span class="file-meta">${node.line_count} lines</span>`;
+            } else if (node.type === 'directory') {
+                meta = `<span class="file-meta" style="color: #495057; font-size: 0.8rem; font-weight: normal;">${node.total_files} files, ${node.total_lines} lines (${node.code_count} code)</span>`;
+            }
             
             let focusBtn = "";
             if (node.id && node.in_call_map) {
                 focusBtn = `<button class="focus-btn" onclick="event.stopPropagation(); focusOnMap('${node.id}', false)" title="Focus in Call Map">🎯</button>`;
             }
-
-            return `<span class="icon">${icon}</span> <span class="file-name">${name}</span> ${typeTag} ${meta} ${focusBtn}`;
-        }
-
-        function navigateTo(id) {
-            const domId = `node-${id.replace(/[^a-zA-Z0-9]/g, '_')}`;
-            const el = document.getElementById(domId);
-            if (el) {
-                let p = el.parentElement;
-                while (p) { if (p.tagName === 'DETAILS') p.open = true; p = p.parentElement; }
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                const s = el.querySelector('summary') || el;
-                s.style.backgroundColor = '#fff3cd';
-                setTimeout(() => s.style.backgroundColor = '', 2000);
-                focusOnMap(id, false);
+            
+            let highlightBtn = "";
+            if (node.id && (node.type === 'directory' || node.type === 'file')) {
+                highlightBtn = `<button class="focus-btn" onclick="event.stopPropagation(); highlightGroup('${node.id}')" title="Highlight in Call Map">🔦</button>`;
             }
+
+            return `<span class="icon">${icon}</span> <span class="file-name">${name}</span> ${typeTag} ${meta} ${focusBtn} ${highlightBtn}`;
         }
 
         /* D3 Call Map Implementation */
@@ -486,20 +531,22 @@
 
             g = svg.append("g");
 
-            // Extract unique groups (FILES ONLY)
+            // Extract unique groups (FILES AND DIRECTORIES)
             const groupMap = new Map();
             data.nodes.forEach(n => {
                 if (!n.groups) return;
-                const fileGroup = n.groups.find(g => g.type === 'file');
-                if (fileGroup) {
-                    if (!groupMap.has(fileGroup.id)) {
-                        groupMap.set(fileGroup.id, { ...fileGroup, nodes: [] });
+                n.groups.forEach(group => {
+                    if (!groupMap.has(group.id)) {
+                        groupMap.set(group.id, { ...group, nodes: [] });
                     }
-                    groupMap.get(fileGroup.id).nodes.push(n);
-                }
+                    groupMap.get(group.id).nodes.push(n);
+                });
             });
 
-            const sortedGroups = Array.from(groupMap.values());
+            // We want to render hulls for FILES first, as they are the most granular
+            // and maybe DIRECTORIES if they are small enough? 
+            // For now, let's keep it to FILES for the main shading, but allow highlighting any group.
+            const sortedGroups = Array.from(groupMap.values()).filter(g => g.type === 'file');
 
             // Color scheme logic
             const rootDirs = Array.from(new Set(sortedGroups.map(g => g.id.split('/')[0])));
@@ -558,10 +605,14 @@
                 .force("collision", d3.forceCollide().radius(35))
                 .force("grouping", groupingForce);
 
-            for (let i = 0; i < 300; ++i) simulation.tick();
+            // Optimize for large projects (MuJoCo)
+            const isLarge = data.nodes.length > 500;
+            const ticks = isLarge ? 50 : 250;
+            
+            for (let i = 0; i < ticks; ++i) simulation.tick();
             simulation.stop();
 
-            // Auto-zoom to fit nodes
+            // Auto-zoom logic...
             if (data.nodes.length > 0) {
                 const xExtent = d3.extent(data.nodes, d => d.x);
                 const yExtent = d3.extent(data.nodes, d => d.y);
@@ -570,9 +621,8 @@
                 const bCenterX = (xExtent[0] + xExtent[1]) / 2;
                 const bCenterY = (yExtent[0] + yExtent[1]) / 2;
                 
-                // Target ~40% of nodes for initial visibility (zoom in significantly more)
                 const padding = 20;
-                const scale = Math.min(width / (bWidth + padding), height / (bHeight + padding), 2.0) * 1.8;
+                const scale = Math.min(width / (bWidth + padding), height / (bHeight + padding), isLarge ? 0.5 : 2.0) * 1.5;
                 
                 svg.call(zoom.transform, d3.zoomIdentity
                     .translate(width / 2, height / 2)
@@ -593,6 +643,7 @@
                 .on("mouseout", hideTooltip)
                 .on("click", (e, d) => {
                     e.stopPropagation();
+                    navigateTo(d.id);
                     highlightGroup(d.id);
                 });
 
@@ -668,9 +719,37 @@
         }
 
         function highlightGroup(groupId) {
-            const memberIds = new Set(projectData.call_graph.nodes
-                .filter(n => n.groups.some(g => g.id === groupId))
-                .map(n => n.id));
+            if (!node) return;
+
+            // Ensure master shading and specific regions are ON
+            const master = document.getElementById('shading-toggle');
+            if (!master.checked) {
+                master.checked = true;
+                toggleShading(true, true); // Turn on master opacity without forcing all regions
+            }
+
+            if (groupId === ".") {
+                // For root, turn on all regions
+                document.querySelectorAll('#region-dropdown input[type="checkbox"]').forEach(cb => {
+                    if (!cb.checked) {
+                        cb.checked = true;
+                        toggleRegion(cb.dataset.region, true);
+                    }
+                });
+            } else {
+                // For specific path, turn on its root region
+                const root = groupId.split('/')[0];
+                const cb = document.querySelector(`#region-dropdown input[data-region="${root}"]`);
+                if (cb && !cb.checked) {
+                    cb.checked = true;
+                    toggleRegion(root, true);
+                }
+            }
+
+            const members = projectData.call_graph.nodes.filter(n => 
+                n.groups && n.groups.some(g => g.id === groupId)
+            );
+            const memberIds = new Set(members.map(n => n.id));
 
             node.classed("node-active", d => memberIds.has(d.id));
             node.classed("node-faded", d => !memberIds.has(d.id));
@@ -681,9 +760,32 @@
             });
             labels.classed("node-faded", d => !memberIds.has(d.id));
             
-            groupElements.classed("hull-active", d => d.id === groupId);
-            groupElements.classed("hull-faded", d => d.id !== groupId);
-            labelElements.classed("hull-faded", d => d.id !== groupId);
+            const isActive = d => d.id === groupId || d.id.startsWith(groupId === "." ? "" : groupId + "/");
+            groupElements.classed("hull-active", d => isActive(d));
+            groupElements.classed("hull-faded", d => !isActive(d));
+            labelElements.classed("hull-faded", d => !isActive(d));
+
+            // Zoom to fit the highlighted group
+            if (members.length > 0) {
+                const xExtent = d3.extent(members, d => d.x);
+                const yExtent = d3.extent(members, d => d.y);
+                const bWidth = xExtent[1] - xExtent[0];
+                const bHeight = yExtent[1] - yExtent[0];
+                const bCenterX = (xExtent[0] + xExtent[1]) / 2;
+                const bCenterY = (yExtent[0] + yExtent[1]) / 2;
+                
+                const container = document.getElementById('call-map-container');
+                const width = container.clientWidth;
+                const height = container.clientHeight;
+                const padding = 150; 
+                const scale = Math.min(width / (bWidth + padding), height / (bHeight + padding), 1.5);
+                
+                const zoom = d3.zoom().on("zoom", (event) => g.attr("transform", event.transform));
+                svg.transition().duration(750).call(
+                    zoom.transform, 
+                    d3.zoomIdentity.translate(width/2, height/2).scale(scale).translate(-bCenterX, -bCenterY)
+                );
+            }
         }
 
         function focusOnMap(id, shouldFade = false) {

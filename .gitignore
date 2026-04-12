@@ -2,3 +2,4 @@
 *.egg-info/
 *.py[cod]
 *$py.class
+ai_checkpoint.json
